@@ -6,7 +6,7 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 
 # Пути для видео, аудио и файла с результатами транскрипции
 video_path = "./mnt/data/2024-09-11 Иванов SA.mkv"
-audio_path = "./mnt/data/Голос 250121_163330.m4a"
+audio_path = "./mnt/data/Sberprjct.m4a"
 transcription_file_path = f"./mnt/data/{os.path.splitext(os.path.basename(audio_path))[0]}_transcription.txt"
 wav_path = ""
 
