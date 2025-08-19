@@ -182,62 +182,6 @@ jobs:
           path: ${{ env.APP_NAME }}-windows-arm64.zip
           if-no-files-found: error
 
-  build-ubuntu-x64:
-    name: Build Ubuntu x64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zip xz-utils curl
-
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller==6.10.0
-
-      - name: Build onefile
-        run: |
-          pyinstaller --onefile "$APP_ENTRY"
-          ls -la dist
-
-      - name: Prepare package dir
-        run: |
-          mkdir -p package/ffmpeg
-          cp "dist/${APP_NAME}" "package/${APP_NAME}"
-
-      - name: Download FFmpeg (Linux x64 static)
-        run: |
-          curl -fsSL -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          mkdir -p ffmpeg-x64
-          tar -xJf ffmpeg.tar.xz -C ffmpeg-x64
-          FF=$(find ffmpeg-x64 -type f -name ffmpeg | head -n 1)
-          if [ -z "$FF" ]; then
-            echo "WARN: ffmpeg not found in archive. Package will rely on PATH."
-          else
-            cp "$FF" package/ffmpeg/ffmpeg
-            chmod +x package/ffmpeg/ffmpeg
-          fi
-
-      - name: Zip package
-        run: |
-          (cd package && zip -r "../${APP_NAME}-ubuntu-x64.zip" .)
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-ubuntu-x64.zip
-          path: ${{ env.APP_NAME }}-ubuntu-x64.zip
-          if-no-files-found: error
 
   release:
     name: Create GitHub Release (nightly)
@@ -245,7 +189,6 @@ jobs:
     needs:
       - build-windows-x64
       - build-windows-arm64
-      - build-ubuntu-x64
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
