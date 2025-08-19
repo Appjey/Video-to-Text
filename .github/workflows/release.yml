@@ -32,10 +32,11 @@ jobs:
           pip install faster-whisper==1.2.0 ctranslate2==4.6.0 numpy==2.1.1 tqdm==4.66.5
           pip install pyinstaller==6.10.0
 
-      - name: Build via spec (ONEFILE defined inside .spec)
+      - name: Build via spec (CMD shell)
+        shell: cmd
         run: |
           pyinstaller stt_cli.spec
-          if not exist dist\stt_cli.exe ( exit 1 )
+          if not exist dist\stt_cli.exe exit 1
           dir dist
 
       - name: Prepare package dir
