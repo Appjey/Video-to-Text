@@ -3,7 +3,7 @@ name: build-and-release
 on:
   push:
     branches: [ "master" ]
-  workflow_dispatch: { }
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-windows-x64:
-    name: Build Windows x64
+    name: Build Windows x64 (spec)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -26,19 +26,19 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install deps (pinned)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install faster-whisper==1.2.0 ctranslate2==4.6.0 numpy==2.1.1 tqdm==4.66.5
           pip install pyinstaller==6.10.0
 
-      - name: Build onefile
-        shell: bash
+      - name: Build (PyInstaller spec)
         run: |
-          pyinstaller --onefile "$APP_ENTRY"
-          ls -la dist
+          pyinstaller stt_cli.spec --onefile
+          dir dist
 
       - name: Prepare package dir
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Path package\ffmpeg -Force | Out-Null
           Copy-Item "dist\${{ env.APP_NAME }}.exe" "package\${{ env.APP_NAME }}.exe"
@@ -64,131 +64,36 @@ jobs:
           path: ${{ env.APP_NAME }}-windows-x64.zip
           if-no-files-found: error
 
-  build-windows-arm64:
-    name: Build Windows ARM64
-    runs-on: windows-11-arm
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller==6.10.0
-
-      - name: Build onefile
-        shell: bash
-        run: |
-          pyinstaller --onefile "$APP_ENTRY"
-          ls -la dist
-
-      - name: Prepare package dir
-        run: |
-          New-Item -ItemType Directory -Path package\ffmpeg -Force | Out-Null
-          Copy-Item "dist\${{ env.APP_NAME }}.exe" "package\${{ env.APP_NAME }}.exe"
-
-      # Загрузка FFmpeg для Windows ARM64 (ищем .zip в приоритете, иначе .7z)
-      - name: Download FFmpeg (Windows ARM64)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          $ErrorActionPreference = "Stop"
-          $api = "https://api.github.com/repos/tordona/ffmpeg-win-arm64/releases/latest"
-          try {
-            $resp = Invoke-RestMethod -Uri $api -UseBasicParsing
-          } catch {
-            Write-Host "WARN: FFmpeg ARM64 release API unavailable: $($_.Exception.Message)"
-            return
-          }
-
-          # Предпочитаем ZIP; если нет — берём 7z
-          $asset = $resp.assets | Where-Object {
-            $_.name -match 'arm64' -and $_.name -match 'win' -and $_.name -match '\.(zip|7z)$'
-          } | Sort-Object name | Select-Object -First 1
-
-          if (-not $asset) {
-            Write-Host "WARN: No suitable FFmpeg arm64 asset (.zip or .7z) found in latest release."
-            return
-          }
-
-          $fname = $asset.name
-          $url   = $asset.browser_download_url
-          Write-Host "Downloading: $fname"
-          Invoke-WebRequest -Uri $url -OutFile $fname
-
-          $ext = [System.IO.Path]::GetExtension($fname).ToLowerInvariant()
-
-          if ($ext -eq ".zip") {
-            Expand-Archive -Path $fname -DestinationPath ffmpeg-arm -Force
-          } elseif ($ext -eq ".7z") {
-            # Пытаемся использовать 7-Zip через Chocolatey; если нет choco — fallback на portable 7zr.exe
-            $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
-            if (-not (Test-Path $sevenZip)) {
-              Write-Host "Installing 7-Zip via Chocolatey..."
-              try {
-                choco --version | Out-Null
-              } catch {
-                Write-Host "Chocolatey not available; will try portable 7zr.exe"
-              }
-
-              try {
-                choco install 7zip -y --no-progress
-              } catch {
-                # Portable 7zr.exe fallback
-                $zr = Join-Path $env:RUNNER_TEMP "7zr.exe"
-                Write-Host "Downloading portable 7zr.exe..."
-                Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr
-                if (-not (Test-Path $zr)) {
-                  Write-Host "WARN: 7zr.exe download failed; cannot extract .7z"
-                  return
-                }
-                & $zr x $fname -offmpeg-arm -y | Out-Null
-                goto AfterExtract
-              }
-              $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
-            }
-
-            if (Test-Path $sevenZip) {
-              & $sevenZip x $fname -offmpeg-arm -y | Out-Null
-            } else {
-              Write-Host "WARN: 7-Zip not found; cannot extract .7z"
-              return
-            }
-          }
-
-          :AfterExtract
-          $bin = Get-ChildItem -Recurse -Path ffmpeg-arm | Where-Object { $_.Name -eq "ffmpeg.exe" } | Select-Object -First 1
-          if ($bin) {
-            Copy-Item $bin.FullName "package\ffmpeg\ffmpeg.exe"
-            Write-Host "ffmpeg.exe copied into package\ffmpeg\"
-          } else {
-            Write-Host "WARN: ffmpeg.exe not found after extraction. Package will rely on PATH."
-          }
-
-      - name: Zip package
-        run: |
-          Compress-Archive -Path package\* -DestinationPath "${{ env.APP_NAME }}-windows-arm64.zip"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-windows-arm64.zip
-          path: ${{ env.APP_NAME }}-windows-arm64.zip
-          if-no-files-found: error
-
-
-  release:
-    name: Create GitHub Release (nightly)
+  # Публикуем ARM64-совместимый артефакт как копию x64 (WoA эмулирует x64)
+  package-windows-arm64-compat:
+    name: Package Windows ARM64 (compat via x64)
     runs-on: ubuntu-latest
     needs:
       - build-windows-x64
-      - build-windows-arm64
+    steps:
+      - name: Download x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-x64.zip
+          path: release
+
+      - name: Duplicate as ARM64 compat
+        run: |
+          cp "release/${APP_NAME}-windows-x64.zip" "release/${APP_NAME}-windows-arm64-compat.zip"
+          ls -la release
+
+      - name: Upload compat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-arm64-compat.zip
+          path: release/${{ env.APP_NAME }}-windows-arm64-compat.zip
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-windows-x64
+      - package-windows-arm64-compat
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -215,7 +120,6 @@ jobs:
           make_latest: false
           files: |
             release/${{ env.APP_NAME }}-windows-x64.zip/${{ env.APP_NAME }}-windows-x64.zip
-            release/${{ env.APP_NAME }}-windows-arm64.zip/${{ env.APP_NAME }}-windows-arm64.zip
-            release/${{ env.APP_NAME }}-ubuntu-x64.zip/${{ env.APP_NAME }}-ubuntu-x64.zip
+            release/${{ env.APP_NAME }}-windows-arm64-compat.zip/${{ env.APP_NAME }}-windows-arm64-compat.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

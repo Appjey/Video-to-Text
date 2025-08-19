@@ -9,18 +9,17 @@ block_cipher = None
 fw_datas, fw_binaries, fw_hidden = collect_all('faster_whisper')
 ct2_datas, ct2_binaries, ct2_hidden = collect_all('ctranslate2')
 
-# Плюс явно дёрнем динамические либы (подстраховка)
+# Подстраховка: динамические библиотеки CTranslate2
 ct2_binaries += collect_dynamic_libs('ctranslate2')
 ct2_datas    += collect_data_files('ctranslate2')
 
-# FFmpeg рядом с программой (если лежит в third_party/ffmpeg/bin)
+# Приложим ffmpeg, если есть в third_party/ffmpeg/bin
 extra_bins = []
 ffmpeg_bin_dir = os.path.join('third_party', 'ffmpeg', 'bin')
 if os.path.isdir(ffmpeg_bin_dir):
     for fn in os.listdir(ffmpeg_bin_dir):
         full = os.path.join(ffmpeg_bin_dir, fn)
         if os.path.isfile(full):
-            # складываем в корень рядом с exe
             extra_bins.append((full, '.'))
 
 a = Analysis(
