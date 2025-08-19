@@ -3,7 +3,7 @@ name: build-and-release
 on:
   push:
     branches: [ "master" ]
-  workflow_dispatch: {}
+  workflow_dispatch: { }
 
 permissions:
   contents: write
@@ -93,31 +93,82 @@ jobs:
           New-Item -ItemType Directory -Path package\ffmpeg -Force | Out-Null
           Copy-Item "dist\${{ env.APP_NAME }}.exe" "package\${{ env.APP_NAME }}.exe"
 
-      - name: Install 7zip (for .7z)
-        shell: pwsh
-        run: |
-          winget install --id 7zip.7zip -e --accept-package-agreements --accept-source-agreements
-
-      - name: Download FFmpeg (Windows ARM64 community build)
+      # Загрузка FFmpeg для Windows ARM64 (ищем .zip в приоритете, иначе .7z)
+      - name: Download FFmpeg (Windows ARM64)
         shell: pwsh
         continue-on-error: true
         run: |
-          # Получаем latest release из tordona/ffmpeg-win-arm64 и вытаскиваем essentials shared .7z
+          $ErrorActionPreference = "Stop"
           $api = "https://api.github.com/repos/tordona/ffmpeg-win-arm64/releases/latest"
-          $resp = Invoke-RestMethod -Uri $api -UseBasicParsing
-          $asset = $resp.assets | Where-Object { $_.name -like "*essentials-shared-win-arm64.7z" } | Select-Object -First 1
-          if ($null -ne $asset) {
-            $url = $asset.browser_download_url
-            Invoke-WebRequest -Uri $url -OutFile ffmpeg.7z
-            & "C:\Program Files\7-Zip\7z.exe" x ffmpeg.7z -offmpeg-arm -y | Out-Null
-            $bin = Get-ChildItem -Recurse -Path ffmpeg-arm | Where-Object { $_.Name -eq "ffmpeg.exe" } | Select-Object -First 1
-            if ($bin) {
-              Copy-Item $bin.FullName "package\ffmpeg\ffmpeg.exe"
-            } else {
-              Write-Host "WARN: ffmpeg.exe not found after extraction. Package will rely on PATH."
+          try {
+            $resp = Invoke-RestMethod -Uri $api -UseBasicParsing
+          } catch {
+            Write-Host "WARN: FFmpeg ARM64 release API unavailable: $($_.Exception.Message)"
+            return
+          }
+
+          # Предпочитаем ZIP; если нет — берём 7z
+          $asset = $resp.assets | Where-Object {
+            $_.name -match 'arm64' -and $_.name -match 'win' -and $_.name -match '\.(zip|7z)$'
+          } | Sort-Object name | Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Host "WARN: No suitable FFmpeg arm64 asset (.zip or .7z) found in latest release."
+            return
+          }
+
+          $fname = $asset.name
+          $url   = $asset.browser_download_url
+          Write-Host "Downloading: $fname"
+          Invoke-WebRequest -Uri $url -OutFile $fname
+
+          $ext = [System.IO.Path]::GetExtension($fname).ToLowerInvariant()
+
+          if ($ext -eq ".zip") {
+            Expand-Archive -Path $fname -DestinationPath ffmpeg-arm -Force
+          } elseif ($ext -eq ".7z") {
+            # Пытаемся использовать 7-Zip через Chocolatey; если нет choco — fallback на portable 7zr.exe
+            $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
+            if (-not (Test-Path $sevenZip)) {
+              Write-Host "Installing 7-Zip via Chocolatey..."
+              try {
+                choco --version | Out-Null
+              } catch {
+                Write-Host "Chocolatey not available; will try portable 7zr.exe"
+              }
+
+              try {
+                choco install 7zip -y --no-progress
+              } catch {
+                # Portable 7zr.exe fallback
+                $zr = Join-Path $env:RUNNER_TEMP "7zr.exe"
+                Write-Host "Downloading portable 7zr.exe..."
+                Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr
+                if (-not (Test-Path $zr)) {
+                  Write-Host "WARN: 7zr.exe download failed; cannot extract .7z"
+                  return
+                }
+                & $zr x $fname -offmpeg-arm -y | Out-Null
+                goto AfterExtract
+              }
+              $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
             }
+
+            if (Test-Path $sevenZip) {
+              & $sevenZip x $fname -offmpeg-arm -y | Out-Null
+            } else {
+              Write-Host "WARN: 7-Zip not found; cannot extract .7z"
+              return
+            }
+          }
+
+          :AfterExtract
+          $bin = Get-ChildItem -Recurse -Path ffmpeg-arm | Where-Object { $_.Name -eq "ffmpeg.exe" } | Select-Object -First 1
+          if ($bin) {
+            Copy-Item $bin.FullName "package\ffmpeg\ffmpeg.exe"
+            Write-Host "ffmpeg.exe copied into package\ffmpeg\"
           } else {
-            Write-Host "WARN: No ARM64 asset found in latest release. Package will rely on PATH."
+            Write-Host "WARN: ffmpeg.exe not found after extraction. Package will rely on PATH."
           }
 
       - name: Zip package
