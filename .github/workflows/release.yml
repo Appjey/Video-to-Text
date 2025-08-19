@@ -21,10 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.11.8"
 
       - name: Install deps (pinned)
         run: |
@@ -32,16 +32,17 @@ jobs:
           pip install faster-whisper==1.2.0 ctranslate2==4.6.0 numpy==2.1.1 tqdm==4.66.5
           pip install pyinstaller==6.10.0
 
-      - name: Build (PyInstaller spec)
+      - name: Build via spec (ONEFILE defined inside .spec)
         run: |
-          pyinstaller stt_cli.spec --onefile
+          pyinstaller stt_cli.spec
+          if not exist dist\stt_cli.exe ( exit 1 )
           dir dist
 
       - name: Prepare package dir
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path package\ffmpeg -Force | Out-Null
-          Copy-Item "dist\${{ env.APP_NAME }}.exe" "package\${{ env.APP_NAME }}.exe"
+          Copy-Item "dist\stt_cli.exe" "package\stt_cli.exe"
 
       - name: Download FFmpeg (BtbN win64)
         shell: pwsh
@@ -55,13 +56,13 @@ jobs:
 
       - name: Zip package
         run: |
-          Compress-Archive -Path package\* -DestinationPath "${{ env.APP_NAME }}-windows-x64.zip"
+          Compress-Archive -Path package\* -DestinationPath "stt_cli-windows-x64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-windows-x64.zip
-          path: ${{ env.APP_NAME }}-windows-x64.zip
+          name: stt_cli-windows-x64.zip
+          path: stt_cli-windows-x64.zip
           if-no-files-found: error
 
   # Публикуем ARM64-совместимый артефакт как копию x64 (WoA эмулирует x64)
