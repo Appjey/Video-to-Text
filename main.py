@@ -1,12 +1,15 @@
 import torch
+import os
 import torchaudio
 import moviepy.editor as mp
-import os
+
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 
 # Пути для видео, аудио и файла с результатами транскрипции
-video_path = "./mnt/data/2024-09-11 Иванов SA.mkv"
-audio_path = "./mnt/data/Sberprjct.m4a"
+filename = "2026-01-28 13-01-29"
+video_path = f"./mnt/data/{filename}.mp4"
+audio_path = f"./mnt/data/{filename}.mp4"
+language = "ru"
 transcription_file_path = f"./mnt/data/{os.path.splitext(os.path.basename(audio_path))[0]}_transcription.txt"
 wav_path = ""
 
@@ -19,6 +22,9 @@ MAX_AUDIO_LENGTH_SEC = 30
 
 def extract_audio_from_video(video_path, audio_path):
     """Извлекает аудио из видеофайла с помощью MoviePy."""
+    if os.path.exists(audio_path):
+        print(f"Аудио уже извлечено: {audio_path}")
+        return
     clip = mp.VideoFileClip(video_path)
     clip.audio.write_audiofile(audio_path)
     print(f"Аудио сохранено в {audio_path}")
@@ -28,6 +34,9 @@ def convert_to_wav_using_moviepy(input_path, output_wav_path):
     Конвертирует входной аудиофайл (например, M4A) в WAV с помощью MoviePy (ffmpeg).
     codec='pcm_s16le' даёт 16-битный PCM, что удобно для дальнейшей обработки.
     """
+    if os.path.exists(output_wav_path):
+        print(f"WAV файл уже существует: {output_wav_path}")
+        return
     print(f"Конвертация файла {input_path} в WAV...")
     # Открываем аудио через MoviePy
     with mp.AudioFileClip(input_path) as audio_clip:
@@ -108,19 +117,18 @@ def split_audio_into_chunks(speech_array, sample_rate, chunk_length_sec=30):
     return chunks
 
 def transcribe_chunk_with_whisper(chunk, model, processor, sample_rate, device):
-    """
-    Обрабатывает один аудио-чанк, подаёт на вход Whisper, возвращает строку-транскрипцию.
-    """
-    # Преобразуем аудио-тензор в numpy
     chunk = chunk.squeeze().numpy()
-    # Формируем фичи для Whisper
     inputs = processor(chunk, sampling_rate=sample_rate, return_tensors="pt").input_features.to(device)
 
     with torch.no_grad():
-        predicted_ids = model.generate(inputs)
+        if device == "cuda":
+            with torch.autocast(device_type="cuda"):  # dtype по умолчанию float16
+                predicted_ids = model.generate(inputs, language=language, task="transcribe")
+        else:
+            predicted_ids = model.generate(inputs, language=language, task="transcribe")
 
-    transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-    return transcription
+    return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+
 
 def transcribe_with_whisper_in_chunks(audio_path, chunk_length_sec=30):
     """
