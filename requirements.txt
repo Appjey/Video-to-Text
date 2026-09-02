@@ -1,19 +1,19 @@
 # Колёса PyTorch с поддержкой CUDA 12.8 (для CPU-варианта строку можно убрать)
---extra-index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://download.pytorch.org/whl/cu132
 
-# main.py — Whisper через transformers; ffmpeg берётся из PATH или из imageio-ffmpeg
-torch==2.10.0
+# main.py — Whisper через transformers + диаризация pyannote; ffmpeg берётся из PATH или из imageio-ffmpeg.
+# torch/torchaudio 2.8 закреплены намеренно: pyannote.audio 3.x не работает с torchaudio 2.9+.
+torch==2.8.0
+torchaudio==2.8.0
 transformers==4.47.1
 numpy==1.26.4
 imageio-ffmpeg==0.6.0
+pyannote.audio==3.4.0
 
 # stt_cli.py — faster-whisper (версии те же, что в .github/workflows/release.yml)
 faster-whisper==1.2.0
 ctranslate2==4.6.0
 tqdm==4.66.5
-
-# Опционально: диаризация по спикерам (stt_cli.py --diarize)
-# pyannote.audio==3.3.2
 
 # Опционально: транскрибация с микрофона (extras/audio_stream.py)
 # PyAudio==0.2.14

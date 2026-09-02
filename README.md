@@ -6,7 +6,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `main.py` | Основной скрипт: Whisper large-v3 через `transformers`. Запускается из venv. |
+| `main.py` | Основной скрипт: Whisper large-v3 через `transformers` с таймкодами и разметкой спикеров (`pyannote.audio`). |
 | `stt_cli.py` | Переносимая CLI-утилита на `faster-whisper` (VAD, диаризация, откат на CPU). Из неё собирается `stt_cli.exe`. |
 | `stt_cli.spec` | Конфигурация PyInstaller для сборки `stt_cli.exe`. |
 | `.github/workflows/release.yml` | CI: сборка `stt_cli.exe` под Windows и публикация релиза. |
@@ -22,6 +22,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Версии `torch`/`torchaudio` 2.8 закреплены намеренно: `pyannote.audio` 3.x не работает с `torchaudio` 2.9+.
+
 Оба скрипта используют `ffmpeg`: `main.py` ищет его в PATH, иначе берёт бинарник из пакета `imageio-ffmpeg`;
 `stt_cli.py` ищет его в PATH либо рядом со скриптом (`./ffmpeg/ffmpeg.exe`).
 
@@ -29,15 +31,41 @@ pip install -r requirements.txt
 
 ```bash
 python main.py "mnt/data/запись.mp4"
-python main.py "mnt/data/звонок.amr" --language ru --output результат.txt
+python main.py "mnt/data/звонок.amr" --speakers 2
+python main.py "лекция.mkv" --no-diarize --no-timestamps --output лекция.txt
 ```
+
+Формат результата:
+
+```
+[00:00:03 - 00:00:09] SPEAKER_00: Добрый день, ...
+[00:00:09 - 00:00:15] SPEAKER_01: Здравствуйте, ...
+```
+
+Как это работает:
+
+- `ffmpeg` декодирует звук прямо в память (16 кГц, моно), временные файлы не создаются;
+- Whisper обрабатывает запись штатным long-form алгоритмом `transformers`: границы сегментов и таймкоды
+  предсказывает сама модель, при сомнительном результате включается temperature fallback
+  (рекомендации из карточки `openai/whisper-large-v3`);
+- `pyannote.audio` размечает, кто и когда говорит; сегментам Whisper присваивается спикер по максимальному
+  перекрытию, соседние реплики одного спикера склеиваются в одну строку.
+
+Для диаризации нужен токен Hugging Face (`huggingface-cli login` или `--hf-token`) и принятые условия моделей
+`pyannote/speaker-diarization-3.1` и `pyannote/segmentation-3.0` на huggingface.co. Без токена скрипт
+предупредит и сохранит результат без спикеров.
 
 Параметры:
 
 - `input` — путь к видео/аудио (mp4, mkv, mp3, wav, amr, m4a ...);
 - `-o, --output` — куда сохранить текст (по умолчанию рядом: `<имя>_transcription.txt`);
 - `--language` — код языка, по умолчанию `ru`;
-- `--model` — модель Whisper с Hugging Face, по умолчанию `openai/whisper-large-v3`.
+- `--model` — модель Whisper с Hugging Face, по умолчанию `openai/whisper-large-v3`;
+- `--device` — `auto`, `cuda` или `cpu`;
+- `--speakers N`, `--min-speakers`, `--max-speakers` — подсказки по числу спикеров;
+- `--no-diarize` — без разметки спикеров, `--no-timestamps` — без таймкодов;
+- `--join-threshold` — макс. пауза в секундах для склейки реплик одного спикера (по умолчанию 1.5),
+  `--max-line-chars` — лимит длины одной реплики (по умолчанию 600).
 
 ## stt_cli.py / stt_cli.exe
 
