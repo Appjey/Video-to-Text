@@ -1,4 +1,15 @@
-/mnt/data/*
-/project/
+# Виртуальное окружение и кэш Python
 /.venv/
-ck3tr
+__pycache__/
+*.pyc
+
+# Локальные медиафайлы и результаты транскрибации
+/mnt/data/*
+
+# Артефакты сборки PyInstaller
+/build/
+/dist/
+
+# Локальные модели и бинарники ffmpeg
+/models/
+/third_party/

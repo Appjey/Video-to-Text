@@ -320,7 +320,7 @@ def main():
                 print("⚠️  CUDA недоступна или отсутствуют CUDA/cuDNN DLL. "
                       "Попробую переключиться на CPU (int8). "
                       "Чтобы требовать GPU — укажите --gpu-required.")
-                if args.gpu-required:
+                if args.gpu_required:
                     raise
                 device, compute_type = "cpu", "int8"
                 model = make_model(device, compute_type)

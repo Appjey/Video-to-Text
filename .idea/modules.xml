@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/Vide-to-Text.iml" filepath="$PROJECT_DIR$/.idea/Vide-to-Text.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/vide-to-text.iml" filepath="$PROJECT_DIR$/.idea/vide-to-text.iml" />
     </modules>
   </component>
 </project>
